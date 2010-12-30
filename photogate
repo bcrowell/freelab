@@ -1,0 +1,64 @@
+#!/usr/bin/ruby
+
+require 'vernier.rb'
+
+require 'gtk2'
+
+def clean_up
+end
+
+Gtk.init
+
+# http://ruby-gnome2.sourceforge.jp/hiki.cgi?Gtk%3A%3AWindow
+window = Gtk::Window.new("Photogate")
+window.signal_connect("destroy") {
+  clean_up()
+  Gtk.main_quit
+}
+window.border_width = 10
+window.set_window_position('center')
+window.set_size_request(400, 600)
+
+vbox = Gtk::VBox.new(0,0)
+window.add(vbox)
+vbox.border_width = 2
+
+# http://ruby-gnome2.sourceforge.jp/hiki.cgi?tut-gtk2-txtw-scrolledwin
+sw = Gtk::ScrolledWindow.new(nil,nil)
+sw.set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_ALWAYS) # horizontal, vertical
+
+# http://ruby-gnome2.sourceforge.jp/hiki.cgi?Gtk%3A%3ATextView
+tv = Gtk::TextView.new
+tv.cursor_visible = false
+tv.editable = false
+tv.modify_font(Pango::FontDescription.new("bold 32")) # http://www.pygtk.org/docs/pygtk/class-pangofontdescription.html
+# http://www.ruby-forum.com/topic/119851 :
+tv.signal_connect("size-allocate") do |widget, step, arg2|
+  sw.vadjustment.value = sw.vadjustment.upper -  sw.vadjustment.page_size
+end
+# http://gtk2-perl.sourceforge.net/doc/pod/Gtk2/TextBuffer.html
+buff = tv.buffer
+buff.set_text('')
+
+sw.add(tv)
+
+vbox.pack_start(sw,false,true,2) # pack_start: (child,expand,fill,padding), http://www.pygtk.org/docs/pygtk/class-gtkbox.html
+
+window.show_all
+
+lab_pro=LabPro.new;
+photogate=Photogate.new(lab_pro,1);
+
+GLib::Timeout.add(300) { # time in milliseconds
+  if photogate.n!=0 then
+    got = false
+    photogate.dt.each { |x|
+      buff.insert(buff.end_iter(),"#{x} s\n") # http://gtk2-perl.sourceforge.net/doc/pod/Gtk2/TextIter.html
+      got = true
+    }
+    photogate.clear_data if got
+  end
+  true
+}
+
+Gtk.main
