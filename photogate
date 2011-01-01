@@ -5,6 +5,7 @@ require 'vernier.rb'
 require 'gtk2'
 
 def clean_up
+  $lab_pro.reset
 end
 
 Gtk.init
@@ -17,11 +18,11 @@ window.signal_connect("destroy") {
 }
 window.border_width = 10
 window.set_window_position('center')
-window.set_size_request(400, 600)
+window.set_size_request(600, 600)
 
-vbox = Gtk::VBox.new(0,0)
-window.add(vbox)
-vbox.border_width = 2
+hbox = Gtk::HBox.new
+window.add(hbox)
+hbox.border_width = 2
 
 # http://ruby-gnome2.sourceforge.jp/hiki.cgi?tut-gtk2-txtw-scrolledwin
 sw = Gtk::ScrolledWindow.new(nil,nil)
@@ -42,12 +43,60 @@ buff.set_text('')
 
 sw.add(tv)
 
-vbox.pack_start(sw,false,true,2) # pack_start: (child,expand,fill,padding), http://www.pygtk.org/docs/pygtk/class-gtkbox.html
+#---------------------------
+
+def die(s)
+  STDERR.print s
+  exit(-1)
+end
+def warn(s)
+  STDERR.print s
+end
+def info(s)
+  STDERR.print s
+end
+
+#---------------------------
+
+$lab_pro=LabPro.new
+sensors = $lab_pro.detect_digital_sensors
+if sensors[0]!='photogate' && sensors[1]!='photogate' then die("No photogate was detected in either DIG/SONIC 1 or DIG/SONIC 2.") end
+if sensors[0]=='photogate' && sensors[1]=='photogate' then warn("Photogates were detected in both DIG/SONIC 1 and DIG/SONIC 2. We will only read out the one in channel 1.") end
+ch = 1
+if sensors[0]!='photogate' then ch=2 end
+info("Photogate detected in DIG/SONIC #{ch}.")
+photogate=Photogate.new($lab_pro,ch)
+
+#---------------------------
+
+$collecting = true
+
+vbox = Gtk::VBox.new
+$indicator = Gtk::TextView.new
+$indicator.cursor_visible = false
+$indicator.editable = false
+$indicator.modify_font(Pango::FontDescription.new("bold 32"))
+def update_state_indicator
+  $indicator.buffer.set_text($collecting ? 'Collecting' : 'Paused')
+end
+update_state_indicator()
+vbox.pack_start($indicator,false,false,2)
+
+# buttons:
+[
+  ['Collect',      'collect',       proc {if !$collecting then $collecting=true; photogate.set_up; update_state_indicator() end}],
+  ['Pause',        'pause',         proc {if $collecting then $collecting=false; photogate.inactivate; update_state_indicator() end}],
+  ['Clear Data',   'clear_data',    proc {buff.set_text('')}]
+].each {|b|
+  (label,key,action) = b
+  button = Gtk::Button.new(label)
+  vbox.pack_start(button,false,false,2)
+  button.signal_connect('clicked') { action.call }
+}
+hbox.pack_start(vbox,false,false,2) # pack_start: (child,expand,fill,padding), http://www.pygtk.org/docs/pygtk/class-gtkbox.html
+hbox.pack_start(sw,true,true,2)
 
 window.show_all
-
-lab_pro=LabPro.new;
-photogate=Photogate.new(lab_pro,1);
 
 GLib::Timeout.add(300) { # time in milliseconds
   if photogate.n!=0 then

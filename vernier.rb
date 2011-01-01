@@ -13,6 +13,9 @@ include ObjectSpace
 #   Figure out how to make it automatically kill off vstusb: http://www.vernier.com/discussion/index.php/topic,476.0.html
 #   Add more types of sensors.
 
+$debug = false
+
+
 class Sensor
   def initialize(lab_pro)
     @lab_pro = lab_pro
@@ -49,10 +52,10 @@ class Photogate < DigitalSensor
       # 2=mode, measure pulse width
       # 1=measure time for which it's blocked
 
-    @lab_pro.write("3,9999,1,0")
+    @lab_pro.write("3,9999,1000,0")
       # triggering, etc.;  cmd 3, p. 35
       # 9999=samptime; p. 14 seems to say that this should just be set to some big number...??; they use 10 in examples; do I ever need to tell it to stop?
-      # 1=npoints
+      # 1000=npoints
   end
 
   def clear_data
@@ -92,6 +95,10 @@ class Photogate < DigitalSensor
   def reset
     super
     @pendulum_stored_time = nil
+  end
+
+  def inactivate
+    self.reset
   end
 end
 
@@ -164,8 +171,8 @@ class LabPro
   end
   def write(s)
     if !@is_open then raise IOError,"Can't write, not open",caller end
-    data = "s{#{s}}\r\n"
-    #print "writing #{s}\n"
+    data = "s{#{s}}\r"
+    print "writing s{#{s}}CR, #{data.length} bytes \n" if $debug
     result = @h.usb_bulk_write(@out_endpoint,data,@timeout)
     # return value is # of bytes written, or negative value if error
     raise IOError,"Negative return value #{result} on usb_bulk_write",caller if result<0
@@ -182,6 +189,7 @@ class LabPro
       data = data + buffer
       if buffer =~ /\}/ then break end
     end
+    print "read #{data}, #{data.length} bytes\n" if $debug
     inside = ''
     if !(data=~/\{(.*)\}/) then return [data] end # don't know if this ever actually happens, but maybe on commands like 116?
     inside = $1
@@ -191,6 +199,29 @@ class LabPro
     # numbers are always in this format: +6.06270E+00
     # If a result is in this format, convert it from string to floating point.
     return inside.split(/\s*,\s*/).collect{|x| x=~/^\s*[+\-]\d\.\d+E[+\-]\d+\s*$/ ? x.to_f : x}
+  end
+  def detect_digital_sensors
+    # Returns an array with two elements, saying what type of sensor is plugged into each digital input; nil if no sensor in that input.
+    # The only type of sensor for which this has actually been tested is a photogate.
+    # Sensor types are 'photogate','motion_feet','motion_meters','unknown'. The 'unknown' type means something *is* plugged in, but we don't know what it is.
+    result = []
+    (1..2).each { |ch|
+      self.write("9,#{10+ch},0") # p. 48
+      channel_data = self.read[0]
+      if close_to(channel_data,-999.9) then
+        # Could either be a photogate or nothing plugged in at all.
+        self.write("8,#{10+ch},0") # not really documented (see pp. 47, 31), but seems to work
+        this_is = (close_to(self.read[0],4.0) ? 'photogate' : nil)
+      else
+        # Haven't tested this, but from pp. 48 and 77 of the docs it looks like channel_data is now the resistance of the IDENT resistor, probably in units of kOhms.
+        this_is = 'unknown'
+        {15.0 => 'motion_meters',22.0 => 'motion_meters',10.0=>'motion_feet'}.each {|resistance,sensor| # p. 77
+          this_is = sensor if close_to(channel_data,resistance)
+        }
+      end
+      result.push(this_is)
+    }
+    return result
   end
   def reset # reset the LabPro (clear RAM)
     if @is_open then self.write("0") else raise IOError,"Can't reset, not open",caller end
@@ -213,5 +244,8 @@ class LabPro
     return if h==nil
     if data["interface_claimed"] then h.release_interface(data["interface"]) end
     if data["is_open"] then h.usb_close() end
+  end
+  def close_to(x,y)
+    return (x-y).abs<0.01
   end
 end
