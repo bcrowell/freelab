@@ -44,27 +44,16 @@ sw.add(tv)
 
 #---------------------------
 
-def die(s)
-  STDERR.print s,"\n"
-  exit(-1)
+def info(i)
+  # type can be 'die', 'warn', or 'info'
+  STDERR.print i["message"],"\n"
+  if i["type"]=='die' then exit(-1) end
 end
-def warn(s)
-  STDERR.print s,"\n"
-end
-def info(s)
-  STDERR.print s,"\n"
-end
-
 #---------------------------
 
 $lab_pro=LabPro.new
-sensors = $lab_pro.detect_digital_sensors
-if sensors[0]!='photogate' && sensors[1]!='photogate' then die("No photogate was detected in either DIG/SONIC 1 or DIG/SONIC 2.") end
-if sensors[0]=='photogate' && sensors[1]=='photogate' then warn("Photogates were detected in both DIG/SONIC 1 and DIG/SONIC 2. We will only read out the one in channel 1.") end
-ch = 1
-if sensors[0]!='photogate' then ch=2 end
-info("Photogate detected in DIG/SONIC #{ch}.")
-$photogate=Photogate.new($lab_pro,ch)
+$photogate=Photogate.new($lab_pro)
+$photogate.get_info.each {|i| info(i)}
 
 def clear_data
   $buff.set_text('')
@@ -108,7 +97,6 @@ window.show_all
 GLib::Timeout.add(200) { # time in milliseconds
   if $photogate.n>$n_read && $collecting then
     dt = $photogate.dt
-    $photogate.mark_read(dt.length)
     dt.each { |x|
       $count_data = $count_data+1
       $n_read = $n_read+1

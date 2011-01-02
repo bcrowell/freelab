@@ -5,7 +5,8 @@ include ObjectSpace
 # or Simplified BSD License (http://www.opensource.org/licenses/bsd-license.php)
 
 # Sample use:
-#    ruby1.8 -e 'require "vernier.rb"; l=LabPro.new; p=Photogate.new(l,1); sleep 10; print p.dt().join(" "); l.reset'
+#    ruby1.8 -e 'require "vernier.rb"; l=LabPro.new; p=Photogate.new(l); sleep 10; print p.dt.join(" "); l.reset'
+#    ruby1.8 -e 'require "vernier.rb"; l=LabPro.new; p=Photogate.new(l); sleep 10; print p.pendulum.join(" "); l.reset'
 #    The ruby1.8 is because on my home system, usb.rb isn't installed correctly to work with ruby 1.9.
 # to do:
 #   Make the channel argument to the Photogate constructor optional, and make the software autodetect which channel the sensor is in. But how
@@ -23,9 +24,21 @@ class Sensor
 end
 
 class DigitalSensor < Sensor
-  def initialize(lab_pro)
+  def initialize(lab_pro,type,channel)
+    # type is 'phototage',...
+    # channel is 1 for dig1, 2 for dig2, nil to autosense
     super(lab_pro)
     @lab_pro.write("1,1,14") # always have to set up an analog channel, even if not using it; cmd 1, p. 31; 14=voltage
+    @info = []
+    if (channel==nil) then
+      sensors = lab_pro.detect_digital_sensors
+      if sensors[0]!=type && sensors[1]!=type then add_info('die','sensor_not_found',"No #{type} was detected in either DIG/SONIC 1 or DIG/SONIC 2."); return end
+      if sensors[0]==type && sensors[1]==type then add_info('warn','multiple_sensors_found',"Both DIG/SONIC 1 and DIG/SONIC 2 have #{type}s. We will only read out the one in channel 1.") end
+      channel = 1
+      if sensors[0]!=type then channel=2 end
+      add_info('info','found_sensor',"A #{type} was detected in DIG/SONIC #{channel}.")
+    end
+    @channel = channel
   end
 end
 
@@ -33,11 +46,27 @@ class Photogate < DigitalSensor
   # photogate examples, pp. 14, 53
   # They define a bunch of modes, which IMO aren't particularly useful. There's nothing you can do with the modes that you can't do simply by
   # reading back the data and doing arithmetic on it. I've provided a convenience function for doing that in the case when you want pendulum timing.
-  def initialize(lab_pro,channel)
-    # channel is 1 for dig1, 2 for dig2
-    super(lab_pro)
-    @channel = channel
+
+  def initialize(lab_pro,channel=nil)
+    # channel is 1 for dig1, 2 for dig2, nil to autosense
+    super(lab_pro,'photogate',channel)
+    return if self.has_info_of_type('die')
     self.set_up
+  end
+
+  def add_info(type,code,message) # type can be 'die', 'warn', or 'info'
+    @info.push({'type'=>type,'code'=>code,'message'=>message})
+  end
+
+  def get_info
+    return @info
+  end
+
+  def has_info_of_type(type)
+    @info.each { |i|
+      return true if i["type"]==type
+    }
+    return false
   end
 
   def set_up
@@ -68,20 +97,22 @@ class Photogate < DigitalSensor
 
   def t
     # returns an array containing the clock-times at which the leading edges occurred (photogate became blocked)
-    return self.get_times(-2)
+    return self.get_times('t')
   end
 
   def dt
     # returns an array containing lengths of the times for which the photogate was blocked
-    return self.get_times(-1)
+    return self.get_times('dt')
   end
 
-  def get_times(mode)
-    # From the docs, the two lines below look like they should both do exactly the same thing. In fact, only the one that's not commented out works.
-    #return @lab_pro.ask("12,#{40+@channel},#{mode},#{@n_eaten}")
-    return @lab_pro.ask("12,#{40+@channel},#{mode},0")[@n_eaten..-1]
-      # -1=mode=read out pulse widths
+  def get_times(mode,eat_em_up=true)
+    raw_mode = {'t'=>-2,'dt'=>-1}[mode]
+    # From the docs, the two lines below look like they should both do exactly the same thing. In fact, only the one that's not commented out that works.
+    #result = @lab_pro.ask("12,#{40+@channel},#{raw_mode},#{@n_eaten}")
+    result = @lab_pro.ask("12,#{40+@channel},#{raw_mode},0")[@n_eaten..-1]
       # final param=P1=first data point
+    if eat_em_up then self.mark_read(result.length) end
+    return result
   end
 
   def mark_read(m)
@@ -89,11 +120,14 @@ class Photogate < DigitalSensor
   end
 
   def pendulum
-    tt = self.t
-    if @pendulum_stored_time!=nil then tt.unshift(@pendulum_stored_time); @pendulum_stored_time=nil end
+    tt = self.get_times('t',false)
     result = []
-    tt.each_index {|i| result.push(tt[i]-tt[i-2]) if i%2==0 && i>=2 }
-    if tt.length%2==1 then @pendulum_stored_time=tt.pop else self.clear_data end
+    tt.each_index { |i|
+      if i%2==0 && i>=2 && i>=@n_eaten then
+        result.push(tt[i]-tt[i-2]) 
+      end
+    }
+    self.mark_read(2*result.length)
     return result
   end
 
