@@ -1,0 +1,20 @@
+INSTALLATION
+
+I developed this software on a machine running Ubuntu Linux, but it should work on
+any system that has Ruby and libusb. If you want to use the GUI code I wrote, you'll
+also need the GTK2 library for Ruby. On an Ubuntu machine, the following command will
+install all the stuff you need:
+  sudo apt-get install ruby libusb-ruby libgtk2-ruby
+
+USE FROM THE COMMAND LINE
+
+Examples:
+    ruby -e 'require "vernier.rb"; l=LabPro.new; p=Photogate.new(l); sleep 10; print p.dt.join(" "); l.reset'
+    ruby -e 'require "vernier.rb"; l=LabPro.new; p=Photogate.new(l); sleep 10; print p.pendulum.join(" "); l.reset'
+The first example collects data from a photogate for 10 seconds, and prints out a list of the lengths of time
+for which it was blocked. The second one does something similar in pendulum mode.
+
+GUI
+
+The sample program in the file "photogate" collects data from a photogate, printing out the time for which
+it is blocked.
