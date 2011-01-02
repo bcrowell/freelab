@@ -20,8 +20,6 @@ class Sensor
   def initialize(lab_pro)
     @lab_pro = lab_pro
   end
-  def reset
-  end
 end
 
 class DigitalSensor < Sensor
@@ -43,7 +41,12 @@ class Photogate < DigitalSensor
   end
 
   def set_up
-    @pendulum_stored_time = nil
+    self.clear_data
+    @active = true
+  end
+
+  def clear_data
+    @n_eaten = 0
 
     # 12=digital data capture, p. 51
     @lab_pro.write("12,#{40+@channel},2,1")
@@ -58,29 +61,31 @@ class Photogate < DigitalSensor
       # 1000=npoints
   end
 
-  def clear_data
-    self.set_up
-  end
-
   def n
     # number of available data points
-    return @lab_pro.ask("12,#{40+@channel},0")
+    return @lab_pro.ask("12,#{40+@channel},0")[0].to_i
   end
 
   def t
     # returns an array containing the clock-times at which the leading edges occurred (photogate became blocked)
-    # doesn't clear data for you
-    return @lab_pro.ask("12,#{40+@channel},-2,0")
-      # -2=mode=read out times
-      # 0=P1=first data point
+    return self.get_times(-2)
   end
 
   def dt
-    # doesn't clear data for you
     # returns an array containing lengths of the times for which the photogate was blocked
-    return @lab_pro.ask("12,#{40+@channel},-1,0")
+    return self.get_times(-1)
+  end
+
+  def get_times(mode)
+    # From the docs, the two lines below look like they should both do exactly the same thing. In fact, only the one that's not commented out works.
+    #return @lab_pro.ask("12,#{40+@channel},#{mode},#{@n_eaten}")
+    return @lab_pro.ask("12,#{40+@channel},#{mode},0")[@n_eaten..-1]
       # -1=mode=read out pulse widths
-      # 0=P1=first data point
+      # final param=P1=first data point
+  end
+
+  def mark_read(m)
+    @n_eaten += m
   end
 
   def pendulum
@@ -92,13 +97,16 @@ class Photogate < DigitalSensor
     return result
   end
 
-  def reset
-    super
-    @pendulum_stored_time = nil
+  def activate
+    if !@active then
+      sleep 0.3 # in case data are still being read out from before it was inactivated and then reactivated
+      self.clear_data
+      @active = true
+    end
   end
 
   def inactivate
-    self.reset
+    @active = false
   end
 end
 

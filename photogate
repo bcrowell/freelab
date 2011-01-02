@@ -45,14 +45,14 @@ sw.add(tv)
 #---------------------------
 
 def die(s)
-  STDERR.print s
+  STDERR.print s,"\n"
   exit(-1)
 end
 def warn(s)
-  STDERR.print s
+  STDERR.print s,"\n"
 end
 def info(s)
-  STDERR.print s
+  STDERR.print s,"\n"
 end
 
 #---------------------------
@@ -64,11 +64,13 @@ if sensors[0]=='photogate' && sensors[1]=='photogate' then warn("Photogates were
 ch = 1
 if sensors[0]!='photogate' then ch=2 end
 info("Photogate detected in DIG/SONIC #{ch}.")
-photogate=Photogate.new($lab_pro,ch)
+$photogate=Photogate.new($lab_pro,ch)
 
 def clear_data
   $buff.set_text('')
   $count_data = 0
+  $n_read = 0
+  $photogate.clear_data
 end
 clear_data
 
@@ -89,8 +91,8 @@ vbox.pack_start($indicator,false,false,2)
 
 # buttons:
 [
-  ['Collect',      'collect',       proc {if !$collecting then $collecting=true; photogate.set_up; update_state_indicator() end}],
-  ['Pause',        'pause',         proc {if $collecting then $collecting=false; photogate.inactivate; update_state_indicator() end}],
+  ['Collect',      'collect',       proc {if !$collecting then $collecting=true; $photogate.activate;   update_state_indicator(); $n_read = 0 end}],
+  ['Pause',        'pause',         proc {if $collecting then $collecting=false; $photogate.inactivate; update_state_indicator() end}],
   ['Clear Data',   'clear_data',    proc {clear_data}]
 ].each {|b|
   (label,key,action) = b
@@ -104,14 +106,14 @@ hbox.pack_start(sw,true,true,2)
 window.show_all
 
 GLib::Timeout.add(200) { # time in milliseconds
-  if photogate.n!=0 then
-    got = false
-    photogate.dt.each { |x|
+  if $photogate.n>$n_read && $collecting then
+    dt = $photogate.dt
+    $photogate.mark_read(dt.length)
+    dt.each { |x|
       $count_data = $count_data+1
+      $n_read = $n_read+1
       $buff.insert($buff.end_iter(),"#{$count_data}. #{x} s\n") # http://gtk2-perl.sourceforge.net/doc/pod/Gtk2/TextIter.html
-      got = true
     }
-    photogate.clear_data if got
   end
   true
 }
