@@ -18,7 +18,7 @@ window.signal_connect("destroy") {
 }
 window.border_width = 10
 window.set_window_position('center')
-window.set_size_request(600, 600)
+window.set_size_request(1000, 600)
 
 hbox = Gtk::HBox.new
 window.add(hbox)
@@ -38,8 +38,7 @@ tv.signal_connect("size-allocate") do |widget, step, arg2|
   sw.vadjustment.value = sw.vadjustment.upper -  sw.vadjustment.page_size
 end
 # http://gtk2-perl.sourceforge.net/doc/pod/Gtk2/TextBuffer.html
-buff = tv.buffer
-buff.set_text('')
+$buff = tv.buffer
 
 sw.add(tv)
 
@@ -67,6 +66,12 @@ if sensors[0]!='photogate' then ch=2 end
 info("Photogate detected in DIG/SONIC #{ch}.")
 photogate=Photogate.new($lab_pro,ch)
 
+def clear_data
+  $buff.set_text('')
+  $count_data = 0
+end
+clear_data
+
 #---------------------------
 
 $collecting = true
@@ -86,7 +91,7 @@ vbox.pack_start($indicator,false,false,2)
 [
   ['Collect',      'collect',       proc {if !$collecting then $collecting=true; photogate.set_up; update_state_indicator() end}],
   ['Pause',        'pause',         proc {if $collecting then $collecting=false; photogate.inactivate; update_state_indicator() end}],
-  ['Clear Data',   'clear_data',    proc {buff.set_text('')}]
+  ['Clear Data',   'clear_data',    proc {clear_data}]
 ].each {|b|
   (label,key,action) = b
   button = Gtk::Button.new(label)
@@ -98,11 +103,12 @@ hbox.pack_start(sw,true,true,2)
 
 window.show_all
 
-GLib::Timeout.add(300) { # time in milliseconds
+GLib::Timeout.add(200) { # time in milliseconds
   if photogate.n!=0 then
     got = false
     photogate.dt.each { |x|
-      buff.insert(buff.end_iter(),"#{x} s\n") # http://gtk2-perl.sourceforge.net/doc/pod/Gtk2/TextIter.html
+      $count_data = $count_data+1
+      $buff.insert($buff.end_iter(),"#{$count_data}. #{x} s\n") # http://gtk2-perl.sourceforge.net/doc/pod/Gtk2/TextIter.html
       got = true
     }
     photogate.clear_data if got
