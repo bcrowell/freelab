@@ -14,7 +14,7 @@ include ObjectSpace
 #   Figure out how to make it automatically kill off vstusb: http://www.vernier.com/discussion/index.php/topic,476.0.html
 #   Add more types of sensors.
 
-$debug = false
+$debug = true
 
 
 class Sensor
@@ -29,14 +29,12 @@ class DigitalSensor < Sensor
     # channel is 1 for dig1, 2 for dig2, nil to autosense
     super(lab_pro)
     @lab_pro.write("1,1,14") # always have to set up an analog channel, even if not using it; cmd 1, p. 31; 14=voltage
-    @info = []
     if (channel==nil) then
       sensors = lab_pro.detect_digital_sensors
-      if sensors[0]!=type && sensors[1]!=type then add_info('die','sensor_not_found',"No #{type} was detected in either DIG/SONIC 1 or DIG/SONIC 2."); return end
-      if sensors[0]==type && sensors[1]==type then add_info('warn','multiple_sensors_found',"Both DIG/SONIC 1 and DIG/SONIC 2 have #{type}s. We will only read out the one in channel 1.") end
+      if sensors[0]!=type && sensors[1]!=type then raise VernierException.new('die',@lab_pro,'sensor_not_found',self),"No #{type} was detected in either DIG/SONIC 1 or DIG/SONIC 2." end
+      if sensors[0]==type && sensors[1]==type then raise VernierException.new('warn',@lab_pro,'multiple_sensors_found',self),"Both DIG/SONIC 1 and DIG/SONIC 2 have #{type}s. We will only read out the one in channel 1." end
       channel = 1
       if sensors[0]!=type then channel=2 end
-      add_info('info','found_sensor',"A #{type} was detected in DIG/SONIC #{channel}.")
     end
     @channel = channel
   end
@@ -50,23 +48,7 @@ class Photogate < DigitalSensor
   def initialize(lab_pro,channel=nil)
     # channel is 1 for dig1, 2 for dig2, nil to autosense
     super(lab_pro,'photogate',channel)
-    return if self.has_info_of_type('die')
     self.set_up
-  end
-
-  def add_info(type,code,message) # type can be 'die', 'warn', or 'info'
-    @info.push({'type'=>type,'code'=>code,'message'=>message})
-  end
-
-  def get_info
-    return @info
-  end
-
-  def has_info_of_type(type)
-    @info.each { |i|
-      return true if i["type"]==type
-    }
-    return false
   end
 
   def set_up
@@ -152,7 +134,7 @@ class LabPro
     if options["nth_labpro"]!=nil then n=options["nth_labpro"] end
     reset_on_open = true
     if options["reset_io_open"]!=nil then reset_on_open=options["reset_on_open"] end
-    if File.exist?("/dev/vstusb0") then raise IOError,"Device /dev/vstusb0 exists, so vstusb driver has claimed the LabPro. To prevent this, add 'blacklist vstusb' to /etc/modprobe.d/blacklist.conf .",caller end
+    if File.exist?("/dev/vstusb0") then raise VernierException.new('die',self),"Device /dev/vstusb0 exists, so vstusb driver has claimed the LabPro. To prevent this, add 'blacklist vstusb' to /etc/modprobe.d/blacklist.conf and restart the computer." end
     # ...on Windows, the file won't exist, so this is harmless
     #----- Initialize state:
     @warnings = []
@@ -167,7 +149,7 @@ class LabPro
       if x.idProduct==1 && x.idVendor==0x08f7 && count==n then dev=x; break end
       # 8f7 is vernier; labquest is product id 5
     }
-    if dev==nil then raise IOError,"LabPRO not found",caller end
+    if dev==nil then raise VernierException.new('die',self),"LabPRO not found" end
     @dev = dev
     #----- Find input and output endpoints:
     @in_endpoint = nil
@@ -183,8 +165,8 @@ class LabPro
         end
       end
     }
-    if @in_endpoint==nil  then raise IOError,"No input endpoint found", caller end
-    if @out_endpoint==nil then raise IOError,"No output endpoint found",caller end
+    if @in_endpoint==nil  then raise VernierException.new('die',self),"No input endpoint found", caller end
+    if @out_endpoint==nil then raise VernierException.new('die',self),"No output endpoint found" end
     #----- Open the device:
     @h = @dev.open # h is a USB::DevHandle
     @when_i_die["h"] = @h
@@ -203,7 +185,7 @@ class LabPro
     #----- Check status:
     status = self.ask("7") # 7=get status
     (@firmware_version,@error_status,@battery_warning) = status
-    if @error_status!=0 then raise IOError,"Nonzero error status of LabPro is #{@error_status}",caller end
+    if @error_status!=0 then raise VernierException.new('die',self),"Nonzero error status of LabPro is #{@error_status}" end
       #...sometimes comes back with timing data in status!? can tell it's not really an error code because it's not an integer
     if @battery_warning!=0.0 then @warnings.push "low battery" end
   end
@@ -212,17 +194,17 @@ class LabPro
     return self.read()
   end
   def write(s)
-    if !@is_open then raise IOError,"Can't write, not open",caller end
+    if !@is_open then raise VernierException.new('die',self),"Can't write, not open" end
     data = "s{#{s}}\r"
     print "writing s{#{s}}CR, #{data.length} bytes \n" if $debug
     result = @h.usb_bulk_write(@out_endpoint,data,@timeout)
     # return value is # of bytes written, or negative value if error
-    raise IOError,"Negative return value #{result} on usb_bulk_write",caller if result<0
-    raise IOError,"Tried to write #{data.length} bytes, only wrote #{result}, on usb_bulk_write",caller if result<data.length
+    raise VernierException.new('die',self),"Negative return value #{result} on usb_bulk_write" if result<0
+    raise VernierException.new('die',self),"Tried to write #{data.length} bytes, only wrote #{result}, on usb_bulk_write" if result<data.length
   end
   def read()
     # returns an array
-    if !@is_open then raise IOError,"Can't read, not open",caller end
+    if !@is_open then raise VernierException.new('die',self),"Can't read, not open" end
     data = ''
     while true
       buffer = ' ' * 64
@@ -244,32 +226,27 @@ class LabPro
   end
   def detect_digital_sensors
     # Returns an array with two elements, saying what type of sensor is plugged into each digital input; nil if no sensor in that input.
-    # The only type of sensor for which this has actually been tested is a photogate.
-    # Sensor types are 'photogate','motion_feet','motion_meters','unknown'. The 'unknown' type means something *is* plugged in, but we don't know what it is.
-    result = []
-    (1..2).each { |ch|
-      self.write("9,#{10+ch},0") # p. 48
-      channel_data = self.read[0]
-      if close_to(channel_data,-999.9) then
-        # Could either be a photogate or nothing plugged in at all.
-        self.write("8,#{10+ch},0") # not really documented (see pp. 47, 31), but seems to work
-        this_is = (close_to(self.read[0],4.0) ? 'photogate' : nil)
-      else
-        # Haven't tested this, but from pp. 48 and 77 of the docs it looks like channel_data is now the resistance of the IDENT resistor, probably in units of kOhms.
+    # Sensor types currently supported are 'photogate' and 'motion'. (I don't think Vernier sells any other digital sensors.)
+    # An 'unknown' type means something *is* plugged in, but we don't know what it is.
+    result = [nil,nil]
+    info = self.ask("80,0") # This is not documented in the LabPro technical manual as of January 2011, so the following is based on reverse-engineering.
+    (0..1).each { |i|
+      code = info[i+4]
+      if !close_to(code,0.0) then
         this_is = 'unknown'
-        {15.0 => 'motion_meters',22.0 => 'motion_meters',10.0=>'motion_feet'}.each {|resistance,sensor| # p. 77
-          this_is = sensor if close_to(channel_data,resistance)
-        }
+        if close_to(code,2.0) then this_is='motion' end
+        if close_to(code,4.0) then this_is='photogate' end
+        result[i] = this_is
       end
-      result.push(this_is)
     }
+    print "result=",result.join(","),"\n"
     return result
   end
   def reset # reset the LabPro (clear RAM)
-    if @is_open then self.write("0") else raise IOError,"Can't reset, not open",caller end
+    if @is_open then self.write("0") else raise VernierException.new('die',self),"Can't reset, not open" end
   end
   def status
-    if !@is_open then raise IOError,"Can't get status, not open",caller end
+    if !@is_open then raise VernierException.new('die',self),"Can't get status, not open" end
     
   end
   def close
@@ -289,5 +266,14 @@ class LabPro
   end
   def close_to(x,y)
     return (x-y).abs<0.01
+  end
+end
+
+class VernierException < IOError
+  def initialize(severity,lab_pro,code='',sensor=nil)
+    @severity = severity # can be 'die','warn', or 'info'
+    @lab_pro = lab_pro
+    @code = code
+    @sensor = sensor
   end
 end
