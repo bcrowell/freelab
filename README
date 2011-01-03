@@ -6,16 +6,6 @@ also need the GTK2 library for Ruby. On an Ubuntu machine, the following command
 install all the stuff you need:
   sudo apt-get install ruby libusb-ruby libgtk2-ruby
 
-If you're running Linux, you may also need to disable the vstusb kernel module, which
-is still being distributed with a lot of Linuxes but which Vernier no longer recommends
-using. For Ubuntu, I believe it was distributed with Ubuntu Lucid Lynx (10.04) but removed
-before Maverick Meerkat (10.10). If the file /dev/vstusb0 exists on your system, then you
-have vstusb installed. To disable vstusb temporarily, do this:
-  sudo modprobe -r vstusb
-To disable it permanently, edit the file /etc/modprobe.d/blacklist.conf and add the
-following line:
-  blacklist vstusb
-
 USE FROM THE COMMAND LINE
 
 Examples:
@@ -27,4 +17,4 @@ for which it was blocked. The second one does something similar in pendulum mode
 GUI
 
 The sample program in the file "photogate" collects data from a photogate, printing out the time for which
-it is blocked.
+it is blocked. You can run it using the command "ruby photogate".

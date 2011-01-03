@@ -8,11 +8,6 @@ include ObjectSpace
 #    ruby1.8 -e 'require "vernier.rb"; l=LabPro.new; p=Photogate.new(l); sleep 10; print p.dt.join(" "); l.reset'
 #    ruby1.8 -e 'require "vernier.rb"; l=LabPro.new; p=Photogate.new(l); sleep 10; print p.pendulum.join(" "); l.reset'
 #    The ruby1.8 is because on my home system, usb.rb isn't installed correctly to work with ruby 1.9.
-# to do:
-#   Make the channel argument to the Photogate constructor optional, and make the software autodetect which channel the sensor is in. But how
-#        to do this? http://www.vernier.com/discussion/index.php/topic,477.0.html
-#   Figure out how to make it automatically kill off vstusb: http://www.vernier.com/discussion/index.php/topic,476.0.html
-#   Add more types of sensors.
 
 $debug = false
 
@@ -152,8 +147,6 @@ class LabPro
     if options["nth_labpro"]!=nil then n=options["nth_labpro"] end
     reset_on_open = true
     if options["reset_io_open"]!=nil then reset_on_open=options["reset_on_open"] end
-    if File.exist?("/dev/vstusb0") then raise VernierException.new('error',self),"Device /dev/vstusb0 exists, so vstusb driver has claimed the LabPro. To prevent this, add 'blacklist vstusb' to /etc/modprobe.d/blacklist.conf and restart the computer." end
-    # ...on Windows, the file won't exist, so this is harmless
     #----- Initialize state:
     @warnings = []
     @is_open = false
@@ -191,8 +184,13 @@ class LabPro
     @is_open = true
     @when_i_die["is_open"] = @is_open
     ObjectSpace.undefine_finalizer(self); ObjectSpace.define_finalizer( self, proc {|id| LabPro.finalize(id,@when_i_die) })
-    #----- Claim the interface:
+    #----- If necessary, detach vstusb driver.
     @interface = 0 # I just guessed the 0, but it does seem to be right. Changing it to 1 gives Errno::ENOENT elsewhere.
+    if File.exist?("/dev/vstusb0") then 
+      # ...on Windows, the file won't exist, so this is harmless
+      @h.usb_detach_kernel_driver_np(@interface,@interface) # I think the need to supply @interface twice is a bug in ruby-usb.
+    end
+    #----- Claim the interface:
     @when_i_die["interface"] = @interface
     @h.claim_interface(@interface) # libusb docs say this is required before doing bulk_write
     @interface_claimed = true
