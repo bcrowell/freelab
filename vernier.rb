@@ -14,12 +14,23 @@ include ObjectSpace
 #   Figure out how to make it automatically kill off vstusb: http://www.vernier.com/discussion/index.php/topic,476.0.html
 #   Add more types of sensors.
 
-$debug = true
+$debug = false
 
 
 class Sensor
+  attr_reader :exceptions
   def initialize(lab_pro)
     @lab_pro = lab_pro
+    @exceptions = []
+  end
+  def has_errors
+    @exceptions.each {|e| return true if e.severity=="error"}
+    return false
+  end
+  def print_errors_to_stderr
+    $stderr.print "Listing of errors:\n"
+    @exceptions.each {|e| $stderr.print "#{e.severity}: #{e.message}\n"}
+    $stderr.print "...done\n"
   end
 end
 
@@ -31,10 +42,11 @@ class DigitalSensor < Sensor
     @lab_pro.write("1,1,14") # always have to set up an analog channel, even if not using it; cmd 1, p. 31; 14=voltage
     if (channel==nil) then
       sensors = lab_pro.detect_digital_sensors
-      if sensors[0]!=type && sensors[1]!=type then raise VernierException.new('die',@lab_pro,'sensor_not_found',self),"No #{type} was detected in either DIG/SONIC 1 or DIG/SONIC 2." end
-      if sensors[0]==type && sensors[1]==type then raise VernierException.new('warn',@lab_pro,'multiple_sensors_found',self),"Both DIG/SONIC 1 and DIG/SONIC 2 have #{type}s. We will only read out the one in channel 1." end
       channel = 1
       if sensors[0]!=type then channel=2 end
+      if sensors[0]==type && sensors[1]==type then @exceptions.push(VernierException.new('warn',@lab_pro,'multiple_sensors_found',self,"Both DIG/SONIC 1 and DIG/SONIC 2 have #{type}s. We will only read out the one in channel 1.")) end
+      if sensors[0]!=type && sensors[1]!=type then channel=nil; @exceptions.push(VernierException.new('error',@lab_pro,'sensor_not_found',self,"No #{type} was detected in either DIG/SONIC 1 or DIG/SONIC 2.")) end
+      if (sensors[0]==type) ^ (sensors[1]==type) then @exceptions.push(VernierException.new('info',@lab_pro,'sensor_not_found',self,"Data will be taken from the #{type} plugged into in DIG/SONIC #{channel}.")) end
     end
     @channel = channel
   end
@@ -52,11 +64,13 @@ class Photogate < DigitalSensor
   end
 
   def set_up
+    return if self.has_errors
     self.clear_data
     @active = true
   end
 
   def clear_data
+    return if self.has_errors
     @n_eaten = 0
 
     # 12=digital data capture, p. 51
@@ -73,6 +87,7 @@ class Photogate < DigitalSensor
   end
 
   def n
+    return if self.has_errors
     # number of available data points
     return @lab_pro.ask("12,#{40+@channel},0")[0].to_i
   end
@@ -88,6 +103,7 @@ class Photogate < DigitalSensor
   end
 
   def get_times(mode,eat_em_up=true)
+    return if self.has_errors
     raw_mode = {'t'=>-2,'dt'=>-1}[mode]
     # From the docs, the two lines below look like they should both do exactly the same thing. In fact, only the one that's not commented out that works.
     #result = @lab_pro.ask("12,#{40+@channel},#{raw_mode},#{@n_eaten}")
@@ -102,6 +118,7 @@ class Photogate < DigitalSensor
   end
 
   def pendulum
+    return if self.has_errors
     tt = self.get_times('t',false)
     result = []
     tt.each_index { |i|
@@ -114,6 +131,7 @@ class Photogate < DigitalSensor
   end
 
   def activate
+    return if self.has_errors
     if !@active then
       sleep 0.3 # in case data are still being read out from before it was inactivated and then reactivated
       self.clear_data
@@ -134,7 +152,7 @@ class LabPro
     if options["nth_labpro"]!=nil then n=options["nth_labpro"] end
     reset_on_open = true
     if options["reset_io_open"]!=nil then reset_on_open=options["reset_on_open"] end
-    if File.exist?("/dev/vstusb0") then raise VernierException.new('die',self),"Device /dev/vstusb0 exists, so vstusb driver has claimed the LabPro. To prevent this, add 'blacklist vstusb' to /etc/modprobe.d/blacklist.conf and restart the computer." end
+    if File.exist?("/dev/vstusb0") then raise VernierException.new('error',self),"Device /dev/vstusb0 exists, so vstusb driver has claimed the LabPro. To prevent this, add 'blacklist vstusb' to /etc/modprobe.d/blacklist.conf and restart the computer." end
     # ...on Windows, the file won't exist, so this is harmless
     #----- Initialize state:
     @warnings = []
@@ -149,7 +167,7 @@ class LabPro
       if x.idProduct==1 && x.idVendor==0x08f7 && count==n then dev=x; break end
       # 8f7 is vernier; labquest is product id 5
     }
-    if dev==nil then raise VernierException.new('die',self),"LabPRO not found" end
+    if dev==nil then raise VernierException.new('error',self),"LabPRO not found" end
     @dev = dev
     #----- Find input and output endpoints:
     @in_endpoint = nil
@@ -165,8 +183,8 @@ class LabPro
         end
       end
     }
-    if @in_endpoint==nil  then raise VernierException.new('die',self),"No input endpoint found", caller end
-    if @out_endpoint==nil then raise VernierException.new('die',self),"No output endpoint found" end
+    if @in_endpoint==nil  then raise VernierException.new('error',self),"No input endpoint found", caller end
+    if @out_endpoint==nil then raise VernierException.new('error',self),"No output endpoint found" end
     #----- Open the device:
     @h = @dev.open # h is a USB::DevHandle
     @when_i_die["h"] = @h
@@ -185,7 +203,7 @@ class LabPro
     #----- Check status:
     status = self.ask("7") # 7=get status
     (@firmware_version,@error_status,@battery_warning) = status
-    if @error_status!=0 then raise VernierException.new('die',self),"Nonzero error status of LabPro is #{@error_status}" end
+    if @error_status!=0 then raise VernierException.new('error',self),"Nonzero error status of LabPro is #{@error_status}" end
       #...sometimes comes back with timing data in status!? can tell it's not really an error code because it's not an integer
     if @battery_warning!=0.0 then @warnings.push "low battery" end
   end
@@ -194,17 +212,17 @@ class LabPro
     return self.read()
   end
   def write(s)
-    if !@is_open then raise VernierException.new('die',self),"Can't write, not open" end
+    if !@is_open then raise VernierException.new('error',self),"Can't write, not open" end
     data = "s{#{s}}\r"
     print "writing s{#{s}}CR, #{data.length} bytes \n" if $debug
     result = @h.usb_bulk_write(@out_endpoint,data,@timeout)
     # return value is # of bytes written, or negative value if error
-    raise VernierException.new('die',self),"Negative return value #{result} on usb_bulk_write" if result<0
-    raise VernierException.new('die',self),"Tried to write #{data.length} bytes, only wrote #{result}, on usb_bulk_write" if result<data.length
+    raise VernierException.new('error',self),"Negative return value #{result} on usb_bulk_write" if result<0
+    raise VernierException.new('error',self),"Tried to write #{data.length} bytes, only wrote #{result}, on usb_bulk_write" if result<data.length
   end
   def read()
     # returns an array
-    if !@is_open then raise VernierException.new('die',self),"Can't read, not open" end
+    if !@is_open then raise VernierException.new('error',self),"Can't read, not open" end
     data = ''
     while true
       buffer = ' ' * 64
@@ -239,14 +257,13 @@ class LabPro
         result[i] = this_is
       end
     }
-    print "result=",result.join(","),"\n"
     return result
   end
   def reset # reset the LabPro (clear RAM)
-    if @is_open then self.write("0") else raise VernierException.new('die',self),"Can't reset, not open" end
+    if @is_open then self.write("0") else raise VernierException.new('error',self),"Can't reset, not open" end
   end
   def status
-    if !@is_open then raise VernierException.new('die',self),"Can't get status, not open" end
+    if !@is_open then raise VernierException.new('error',self),"Can't get status, not open" end
     
   end
   def close
@@ -270,10 +287,12 @@ class LabPro
 end
 
 class VernierException < IOError
-  def initialize(severity,lab_pro,code='',sensor=nil)
-    @severity = severity # can be 'die','warn', or 'info'
+  attr_reader :severity,:lab_pro,:code,:sensor,:message
+  def initialize(severity,lab_pro,code='',sensor=nil,message='')
+    @severity = severity # can be 'error','warn', or 'info'
     @lab_pro = lab_pro
     @code = code
     @sensor = sensor
+    @message = message
   end
 end

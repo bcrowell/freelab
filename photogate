@@ -44,16 +44,25 @@ sw.add(tv)
 
 #---------------------------
 
-def info(i)
-  # type can be 'die', 'warn', or 'info'
-  STDERR.print i["message"],"\n"
-  if i["type"]=='die' then exit(-1) end
+$lab_pro = nil
+$photogate = nil
+begin
+  $lab_pro=LabPro.new
+  $photogate=Photogate.new($lab_pro)
+  $photogate.exceptions.each {|e| raise e,e.message}
+rescue VernierException => e
+  describe_error = $!
+  md = Gtk::MessageDialog.new(window,
+            Gtk::Dialog::DESTROY_WITH_PARENT,
+            {"info"=>Gtk::MessageDialog::INFO,"warn"=>Gtk::MessageDialog::WARNING,"error"=>Gtk::MessageDialog::ERROR}[e.severity], 
+            Gtk::MessageDialog::BUTTONS_OK, describe_error)
+  md.run
+  md.destroy
+  if e.severity=='error' then
+    if e.sensor!=nil then clean_up end # If it's just a sensor error, try to tidy up the LoggerPro itself before quitting.
+    exit(-1)
+  end
 end
-#---------------------------
-
-$lab_pro=LabPro.new
-$photogate=Photogate.new($lab_pro)
-$photogate.get_info.each {|i| info(i)}
 
 def clear_data
   $buff.set_text('')
