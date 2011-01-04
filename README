@@ -14,7 +14,17 @@ Examples:
 The first example collects data from a photogate for 10 seconds, and prints out a list of the lengths of time
 for which it was blocked. The second one does something similar in pendulum mode.
 
+Checking for errors:
+   p.exceptions.each {|e| raise e,e.message if e.severity=="error"};
+
+Analog sensors:
+   f=AnalogSensor.new(l,"force"); print f.options["range"],"\n",f.get_data,"\n"; l.reset
+
 GUI
 
 The sample program in the file "photogate" collects data from a photogate, printing out the time for which
 it is blocked. You can run it using the command "ruby photogate".
+
+SENSORS SUPPORTED
+So far only photogates and dual-range force sensors are working. Motion sensors are detected but can't be
+read out.

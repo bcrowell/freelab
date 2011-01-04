@@ -4,11 +4,6 @@ include ObjectSpace
 # (c) 2010 Benjamin Crowell, licensed under GPL v2 (http://www.gnu.org/licenses/old-licenses/gpl-2.0.html)
 # or Simplified BSD License (http://www.opensource.org/licenses/bsd-license.php)
 
-# Sample use:
-#    ruby1.8 -e 'require "vernier.rb"; l=LabPro.new; p=Photogate.new(l); sleep 10; print p.dt.join(" "); l.reset'
-#    ruby1.8 -e 'require "vernier.rb"; l=LabPro.new; p=Photogate.new(l); sleep 10; print p.pendulum.join(" "); l.reset'
-#    The ruby1.8 is because on my home system, usb.rb isn't installed correctly to work with ruby 1.9.
-
 $debug = false
 
 
@@ -27,23 +22,71 @@ class Sensor
     @exceptions.each {|e| $stderr.print "#{e.severity}: #{e.message}\n"}
     $stderr.print "...done\n"
   end
+  def describe_sensor_type(type)
+    return {'photogate'=>'photogate','motion'=>'motion detector','force'=>'force probe'}[type]
+  end
 end
 
 class DigitalSensor < Sensor
-  def initialize(lab_pro,type,channel)
-    # type is 'phototage',...
+  def initialize(lab_pro,type,channel=nil)
+    # type is 'phototage' or 'motion'
     # channel is 1 for dig1, 2 for dig2, nil to autosense
     super(lab_pro)
+    unless {'photogate'=>true,'motion'=>true}[type] then @exceptions.push(VernierException.new('error',@lab_pro,'illegal_digital_sensor_type',self,"Illegal digital sensor type: #{type}")); return end
     @lab_pro.write("1,1,14") # always have to set up an analog channel, even if not using it; cmd 1, p. 31; 14=voltage
     if (channel==nil) then
       sensors = lab_pro.detect_digital_sensors
-      channel = 1
-      if sensors[0]!=type then channel=2 end
-      if sensors[0]==type && sensors[1]==type then @exceptions.push(VernierException.new('warn',@lab_pro,'multiple_sensors_found',self,"Both DIG/SONIC 1 and DIG/SONIC 2 have #{type}s. We will only read out the one in channel 1.")) end
-      if sensors[0]!=type && sensors[1]!=type then channel=nil; @exceptions.push(VernierException.new('error',@lab_pro,'sensor_not_found',self,"No #{type} was detected in either DIG/SONIC 1 or DIG/SONIC 2.")) end
-      if (sensors[0]==type) ^ (sensors[1]==type) then @exceptions.push(VernierException.new('info',@lab_pro,'sensor_not_found',self,"Data will be taken from the #{type} plugged into in DIG/SONIC #{channel}.")) end
+      n_found = 0
+      channel = nil
+      (1..2).each {|x|
+        s = sensors[x-1] # e.g., ['motion',{}]
+        if s!=nil && s[0]==type then channel=x; n_found = n_found+1 end
+      }
+      describe = self.describe_sensor_type(type)
+      if n_found>1 then @exceptions.push(VernierException.new('warn',@lab_pro,'multiple_sensors_found',self,"Both DIG/SONIC 1 and DIG/SONIC 2 have #{describe}s. We will only read out the one in channel #{channel}.")) end
+      if n_found==0 then @exceptions.push(VernierException.new('error',@lab_pro,'sensor_not_found',self,"No #{describe} was detected in either DIG/SONIC 1 or DIG/SONIC 2.")) end
+      if n_found==1 then @exceptions.push(VernierException.new('info',@lab_pro,'unique_sensor_found',self,"Data will be taken from the #{describe} plugged into DIG/SONIC #{channel}.")) end
     end
     @channel = channel
+  end
+end
+
+class AnalogSensor < Sensor
+  attr_reader :options # is a hash such as {'range'=>10}, which tells us the force probe is set to the 10 N scale
+  def initialize(lab_pro,type,channel=nil)
+    # type can only be 'force'
+    # channel is 1-4, or nil to autosense
+    @type = type
+    super(lab_pro)
+    unless {'force'=>true}[type] then @exceptions.push(VernierException.new('error',@lab_pro,'illegal_analog_sensor_type',self,"Illegal analog sensor type: #{type}")); return end
+    if (channel==nil) then
+      sensors = lab_pro.detect_analog_sensors
+      n_found = 0
+      channel = nil
+      (1..4).each {|x|
+        s = sensors[x-1] # e.g., ['force',{'range'=>10}]
+        if s!=nil && s[0]==type then channel=x; n_found = n_found+1; @options=s[1] end
+      }
+      describe = self.describe_sensor_type(type)
+      if n_found>1 then @exceptions.push(VernierException.new('warn',@lab_pro,'multiple_sensors_found',self,"Multiple #{describe}s. We will only read out the one in channel #{channel}.")) end
+      if n_found==0 then @exceptions.push(VernierException.new('error',@lab_pro,'sensor_not_found',self,"No #{describe} was detected in channels 1 through 4.")) end
+      if n_found==1 then @exceptions.push(VernierException.new('info',@lab_pro,'unique_sensor_found',self,"Data will be taken from the #{describe} plugged into channel #{channel}.")) end
+    end
+    @channel = channel
+    return if self.has_errors
+    @lab_pro.write("1,#{@channel},14") # 1=channel setup, p. 31; 14=read voltage 0-5 V
+    if false then # LoggerPro never actually uses command 3
+      @lab_pro.write("3,0.5,-1,0") # data collection setup, p. 35; 0.5=samptime; -1=num points=real-time; 0=trigger type=immediate
+      @lab_pro.read # Docs say that command 3 doesn't return anything, but in fact it does return some data in this context.
+    end
+    # Could do command 4 here for calibration.
+  end
+
+  def get_data
+    result = @lab_pro.ask("9,#{@channel}")[0] # request channel data, p. 48; the bare {9,0} without the third mode operand is what LoggerPro emits
+    # result is 0 to 5, in volts
+    range = self.options["range"] # 10 or 50 N
+    return -(result/2.5-1.0)*range # push is -, pull is +, following LoggerPro's sign convention
   end
 end
 
@@ -79,6 +122,7 @@ class Photogate < DigitalSensor
       # triggering, etc.;  cmd 3, p. 35
       # 9999=samptime; p. 14 seems to say that this should just be set to some big number...??; they use 10 in examples; do I ever need to tell it to stop?
       # 1000=npoints
+    # Docs say command 3 never returns data. In fact it sometimes does, but apparently not in this context.
   end
 
   def n
@@ -195,14 +239,24 @@ class LabPro
     @h.claim_interface(@interface) # libusb docs say this is required before doing bulk_write
     @interface_claimed = true
     @when_i_die["interface_claimed"] = @interface_claimed
-     ObjectSpace.undefine_finalizer(self); ObjectSpace.define_finalizer( self, proc {|id| LabPro.finalize(id,@when_i_die) })
+    ObjectSpace.undefine_finalizer(self); ObjectSpace.define_finalizer( self, proc {|id| LabPro.finalize(id,@when_i_die) })
     #----- Do a reset, if requested:
     self.reset if reset_on_open
     #----- Check status:
-    status = self.ask("7") # 7=get status
+    n_tries = 0
+    while n_tries<3
+      n_tries += 1
+      status = self.ask("7") # 7=get status
+      break if status.length==17
+      $stderr.print "status has wrong length: #{status.join(",")}\n"
+      $stderr.print "reading, resetting and trying again\n"
+      $stderr.print "read left-over data: #{self.read_ignoring_timeout.join(",")}\n" # Try to slurp up any left-over data that's messing us up. If there is none, then catch the resulting time-out.
+      self.write("0")
+      sleep 0.01
+    end
+    if n_tries>1 then $stderr.print "got reasonable status after #{n_tries} tries\n" end
     (@firmware_version,@error_status,@battery_warning) = status
-    if @error_status!=0 then raise VernierException.new('error',self),"Nonzero error status of LabPro is #{@error_status}" end
-      #...sometimes comes back with timing data in status!? can tell it's not really an error code because it's not an integer
+    if @error_status!=0 then print "error status=#{@error_status}\n"; raise VernierException.new('error',self),"Nonzero error status of LabPro is #{@error_status}" end
     if @battery_warning!=0.0 then @warnings.push "low battery" end
   end
   def ask(s)
@@ -240,23 +294,47 @@ class LabPro
     # If a result is in this format, convert it from string to floating point.
     return inside.split(/\s*,\s*/).collect{|x| x=~/^\s*[+\-]\d\.\d+E[+\-]\d+\s*$/ ? x.to_f : x}
   end
+  def read_ignoring_timeout
+    begin
+      return self.read
+      rescue SystemCallError # Errno::ETIMEDOUT
+    end
+    return nil
+  end
   def detect_digital_sensors
     # Returns an array with two elements, saying what type of sensor is plugged into each digital input; nil if no sensor in that input.
     # Sensor types currently supported are 'photogate' and 'motion'. (I don't think Vernier sells any other digital sensors.)
     # An 'unknown' type means something *is* plugged in, but we don't know what it is.
-    result = [nil,nil]
+    return detect_sensors(0,1,4,true)
+  end
+  def detect_analog_sensors
+    # Similar to detect_digital_sensors. Returns an array with four elements.
+    return detect_sensors(0,3,0,false)
+  end
+  def detect_sensors(ch1,ch2,add,digital)
+    # This is a private method. Public methods are detect_digital_sensors and detect_analog_sensors.
+    # for digital sensors: ch1=0,ch2=1,add=4
+    # for analog sensors:  ch1=0,ch2=3,add=0
+    nch = ch2-ch1+1
+    result = [nil] * nch
     info = self.ask("80,0") # This is not documented in the LabPro technical manual as of January 2011, so the following is based on reverse-engineering.
-    (0..1).each { |i|
-      code = info[i+4]
+    (ch1..ch2).each { |i|
+      code = info[i+add]
       if !close_to(code,0.0) then
         this_is = 'unknown'
-        if close_to(code,2.0) then this_is='motion' end
-        if close_to(code,4.0) then this_is='photogate' end
+        if digital then
+          if close_to(code,2.0) then this_is=['motion',{}] end
+          if close_to(code,4.0) then this_is=['photogate',{}] end
+        else
+          if close_to(code,25.0) then this_is=['force',{'range'=>10}] end # dual-range force sensor on 10 N scale
+          if close_to(code,26.0) then this_is=['force',{'range'=>50}] end # dual-range force sensor on 50 N scale
+        end
         result[i] = this_is
       end
     }
     return result
   end
+  private :detect_sensors
   def reset # reset the LabPro (clear RAM)
     if @is_open then self.write("0") else raise VernierException.new('error',self),"Can't reset, not open" end
   end

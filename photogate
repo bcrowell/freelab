@@ -109,7 +109,8 @@ GLib::Timeout.add(200) { # time in milliseconds
     dt.each { |x|
       $count_data = $count_data+1
       $n_read = $n_read+1
-      $buff.insert($buff.end_iter(),"#{$count_data}. #{x} s\n") # http://gtk2-perl.sourceforge.net/doc/pod/Gtk2/TextIter.html
+      printable_x = sprintf("%10.6f",x)
+      $buff.insert($buff.end_iter(),"#{$count_data}. #{printable_x} s\n") # http://gtk2-perl.sourceforge.net/doc/pod/Gtk2/TextIter.html
     }
   end
   true
