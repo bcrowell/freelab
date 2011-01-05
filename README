@@ -25,6 +25,9 @@ GUI
 The sample program in the file "photogate" collects data from a photogate, printing out the time for which
 it is blocked. You can run it using the command "ruby photogate".
 
+The sample program in the file "force" will continuously read out as many force probes as are connected
+to the LabPro. All of the probes must be set to the 10 N scale.
+
 SENSORS SUPPORTED
 So far only photogates and dual-range force sensors are working. Motion sensors are detected but can't be
 read out.

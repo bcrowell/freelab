@@ -34,8 +34,8 @@ class DigitalSensor < Sensor
     super(lab_pro)
     unless {'photogate'=>true,'motion'=>true}[type] then @exceptions.push(VernierException.new('error',@lab_pro,'illegal_digital_sensor_type',self,"Illegal digital sensor type: #{type}")); return end
     @lab_pro.write("1,1,14") # always have to set up an analog channel, even if not using it; cmd 1, p. 31; 14=voltage
+    sensors = lab_pro.detect_digital_sensors
     if (channel==nil) then
-      sensors = lab_pro.detect_digital_sensors
       n_found = 0
       channel = nil
       (1..2).each {|x|
@@ -46,6 +46,8 @@ class DigitalSensor < Sensor
       if n_found>1 then @exceptions.push(VernierException.new('warn',@lab_pro,'multiple_sensors_found',self,"Both DIG/SONIC 1 and DIG/SONIC 2 have #{describe}s. We will only read out the one in channel #{channel}.")) end
       if n_found==0 then @exceptions.push(VernierException.new('error',@lab_pro,'sensor_not_found',self,"No #{describe} was detected in either DIG/SONIC 1 or DIG/SONIC 2.")) end
       if n_found==1 then @exceptions.push(VernierException.new('info',@lab_pro,'unique_sensor_found',self,"Data will be taken from the #{describe} plugged into DIG/SONIC #{channel}.")) end
+    else
+      if sensors[channel-1]==nil || sensors[channel-1][0]!=type then  @exceptions.push(VernierException.new('error',@lab_pro,'no_sensor',self,"No #{describe} was detected in DIG/SONIC #{channel}.")) end
     end
     @channel = channel
   end
@@ -59,21 +61,24 @@ class AnalogSensor < Sensor
     @type = type
     super(lab_pro)
     unless {'force'=>true}[type] then @exceptions.push(VernierException.new('error',@lab_pro,'illegal_analog_sensor_type',self,"Illegal analog sensor type: #{type}")); return end
+    sensors = lab_pro.detect_analog_sensors
     if (channel==nil) then
-      sensors = lab_pro.detect_analog_sensors
       n_found = 0
       channel = nil
       (1..4).each {|x|
         s = sensors[x-1] # e.g., ['force',{'range'=>10}]
-        if s!=nil && s[0]==type then channel=x; n_found = n_found+1; @options=s[1] end
+        if s!=nil && s[0]==type then channel=x; n_found = n_found+1 end
       }
       describe = self.describe_sensor_type(type)
       if n_found>1 then @exceptions.push(VernierException.new('warn',@lab_pro,'multiple_sensors_found',self,"Multiple #{describe}s. We will only read out the one in channel #{channel}.")) end
       if n_found==0 then @exceptions.push(VernierException.new('error',@lab_pro,'sensor_not_found',self,"No #{describe} was detected in channels 1 through 4.")) end
       if n_found==1 then @exceptions.push(VernierException.new('info',@lab_pro,'unique_sensor_found',self,"Data will be taken from the #{describe} plugged into channel #{channel}.")) end
+    else
+      if sensors[channel-1]==nil || sensors[channel-1][0]!=type then @exceptions.push(VernierException.new('error',@lab_pro,'no_sensor',self,"No #{describe} was detected in channel #{channel}.")) end
     end
     @channel = channel
     return if self.has_errors
+    @options=sensors[channel-1][1]
     @lab_pro.write("1,#{@channel},14") # 1=channel setup, p. 31; 14=read voltage 0-5 V
     if false then # LoggerPro never actually uses command 3
       @lab_pro.write("3,0.5,-1,0") # data collection setup, p. 35; 0.5=samptime; -1=num points=real-time; 0=trigger type=immediate

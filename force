@@ -1,0 +1,117 @@
+#!/usr/bin/ruby
+
+require 'vernier.rb'
+
+require 'gtk2'
+
+def clean_up
+  $lab_pro.reset
+end
+
+Gtk.init
+
+# http://ruby-gnome2.sourceforge.jp/hiki.cgi?Gtk%3A%3AWindow
+window = Gtk::Window.new("Force Sensors")
+window.signal_connect("destroy") {
+  clean_up()
+  Gtk.main_quit
+}
+window.border_width = 10
+window.set_window_position('center')
+window.set_size_request(1000, 600)
+
+hbox = Gtk::HBox.new
+window.add(hbox)
+hbox.border_width = 2
+
+# http://ruby-gnome2.sourceforge.jp/hiki.cgi?tut-gtk2-txtw-scrolledwin
+sw = Gtk::ScrolledWindow.new(nil,nil)
+sw.set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_ALWAYS) # horizontal, vertical
+
+# http://ruby-gnome2.sourceforge.jp/hiki.cgi?Gtk%3A%3ATextView
+tv = Gtk::TextView.new
+tv.cursor_visible = false
+tv.editable = false
+tv.modify_font(Pango::FontDescription.new("bold 64")) # http://www.pygtk.org/docs/pygtk/class-pangofontdescription.html
+# http://www.ruby-forum.com/topic/119851 :
+tv.signal_connect("size-allocate") do |widget, step, arg2|
+  sw.vadjustment.value = sw.vadjustment.upper -  sw.vadjustment.page_size
+end
+# http://gtk2-perl.sourceforge.net/doc/pod/Gtk2/TextBuffer.html
+$buff = tv.buffer
+
+sw.add(tv)
+
+#---------------------------
+
+def error_dialog(window,severity,message,e=nil)
+  md = Gtk::MessageDialog.new(window,
+            Gtk::Dialog::DESTROY_WITH_PARENT,
+            {"info"=>Gtk::MessageDialog::INFO,"warn"=>Gtk::MessageDialog::WARNING,"error"=>Gtk::MessageDialog::ERROR}[severity], 
+            Gtk::MessageDialog::BUTTONS_OK, message)
+  md.run
+  md.destroy
+  if severity=='error' then
+    if e.sensor!=nil then clean_up end # If it's just a sensor error, try to tidy up the LoggerPro itself before quitting.
+    exit(-1)
+  end
+end
+
+$lab_pro = nil
+expect_range = 10
+$probes = []
+$what_channel = []
+begin
+  $lab_pro=LabPro.new
+  sensors = $lab_pro.detect_analog_sensors
+  (1..4).each {|ch|
+    if sensors[ch-1]!=nil && sensors[ch-1][0]=='force' then
+      f = AnalogSensor.new($lab_pro,'force',ch)
+      $probes.push(f)
+      $what_channel.push(ch)
+      if (f.options["range"]-expect_range).abs>0.1 then error_dialog(window,'error',"Please set the switch on the force probe in channel #{ch} to #{expect_range} N and try again.",f) end
+      f.exceptions.each {|e| raise e,e.message}
+    end    
+  }
+rescue VernierException => e
+  describe_error = $!
+  error_dialog(window,e.severity,describe_error,e)
+end
+
+def clear_data
+  $buff.set_text('')
+end
+clear_data
+
+#---------------------------
+
+$collecting = true
+
+vbox = Gtk::VBox.new
+
+# buttons:
+[
+].each {|b|
+  (label,key,action) = b
+  button = Gtk::Button.new(label)
+  vbox.pack_start(button,false,false,2)
+  button.signal_connect('clicked') { action.call }
+}
+hbox.pack_start(vbox,false,false,2) # pack_start: (child,expand,fill,padding), http://www.pygtk.org/docs/pygtk/class-gtkbox.html
+hbox.pack_start(sw,true,true,2)
+
+window.show_all
+
+GLib::Timeout.add(500) { # time in milliseconds
+  $buff.set_text('')
+  $probes.each_index {|i|
+    f = $probes[i]
+    if $collecting then
+      printable = sprintf("%8.4f",f.get_data)
+      $buff.insert($buff.end_iter(),"F#{$what_channel} = #{printable} N\n") # http://gtk2-perl.sourceforge.net/doc/pod/Gtk2/TextIter.html
+    end
+  }
+  true
+}
+
+Gtk.main
