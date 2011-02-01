@@ -207,7 +207,9 @@ class LabPro
     count = 0
     USB.devices.each { |x|
       if x.idProduct==1 && x.idVendor==0x08f7 && count==n then dev=x; break end
-      # 8f7 is vernier; labquest is product id 5
+      # 8f7 is vernier; product id's for vernier are 1=default, 2=GoTemp, 3=GoLink, 4=GoMotion, 5=LabQuest, 6=CK Spectrometer, 7=Mini Gas Chromatograph, 8=standalone DAQ
+      # LabPro has product id=1
+      # vendor 2457 is Ocean Optics, business/technical ties with Vernier, wrote vstusb kernel module
     }
     if dev==nil then raise VernierException.new('error',self),"LabPRO not found" end
     @dev = dev

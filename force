@@ -1,6 +1,6 @@
 #!/usr/bin/ruby
 
-require 'vernier.rb'
+require '/usr/bin/labpro/vernier.rb'
 
 require 'gtk2'
 
