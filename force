@@ -108,7 +108,7 @@ GLib::Timeout.add(500) { # time in milliseconds
     f = $probes[i]
     if $collecting then
       printable = sprintf("%8.4f",f.get_data)
-      $buff.insert($buff.end_iter(),"F#{$what_channel} = #{printable} N\n") # http://gtk2-perl.sourceforge.net/doc/pod/Gtk2/TextIter.html
+      $buff.insert($buff.end_iter(),"F#{$what_channel[i]} = #{printable} N\n") # http://gtk2-perl.sourceforge.net/doc/pod/Gtk2/TextIter.html
     end
   }
   true
