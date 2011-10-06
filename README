@@ -44,4 +44,6 @@ If you get "Operation not permitted" errors, the only workaround I've found is t
 lines to your sudoers file, using visudo:
   ALL ALL=NOPASSWD: /usr/bin/labpro/photogate
   ALL ALL=NOPASSWD: /usr/bin/labpro/force
-Then when you run the program, do, e.g., "sudo photogate" rather than just "photogate".
+Then when you run the program, do, e.g., "sudo photogate" rather than just "photogate". (Adding user
+accounts to the plugdev group does not seem to be sufficient. See
+http://ubuntuforums.org/showthread.php?p=11314033 .)
