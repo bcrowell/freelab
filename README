@@ -5,6 +5,8 @@ any system that has Ruby and libusb. If you want to use the GUI code I wrote, yo
 also need the GTK2 library for Ruby. On an Ubuntu machine, the following command will
 install all the stuff you need:
   sudo apt-get install ruby libusb-ruby libgtk2-ruby
+Now install the software by doing:
+  make install
 
 USE FROM THE COMMAND LINE
 
@@ -12,7 +14,8 @@ Examples:
     ruby -e 'require "vernier.rb"; l=LabPro.new; p=Photogate.new(l); sleep 10; print p.dt.join(" "); l.reset'
     ruby -e 'require "vernier.rb"; l=LabPro.new; p=Photogate.new(l); sleep 10; print p.pendulum.join(" "); l.reset'
 The first example collects data from a photogate for 10 seconds, and prints out a list of the lengths of time
-for which it was blocked. The second one does something similar in pendulum mode.
+for which it was blocked. The second one does something similar in pendulum mode. If these cause an error
+"Operation not permitted," then see below under Permissions.
 
 Checking for errors:
    p.exceptions.each {|e| raise e,e.message if e.severity=="error"};
@@ -28,6 +31,17 @@ it is blocked. You can run it using the command "ruby photogate".
 The sample program in the file "force" will continuously read out as many force probes as are connected
 to the LabPro. All of the probes must be set to the 10 N scale.
 
+If these cause an error "Operation not permitted," then see below under Permissions.
+
 SENSORS SUPPORTED
+
 So far only photogates and dual-range force sensors are working. Motion sensors are detected but can't be
 read out.
+
+PERMISSIONS
+
+If you get "Operation not permitted" errors, the only workaround I've found is to add the following
+lines to your sudoers file, using visudo:
+  ALL ALL=NOPASSWD: /usr/bin/labpro/photogate
+  ALL ALL=NOPASSWD: /usr/bin/labpro/force
+Then when you run the program, do, e.g., "sudo photogate" rather than just "photogate".
