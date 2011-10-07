@@ -40,10 +40,17 @@ read out.
 
 PERMISSIONS
 
-If you get "Operation not permitted" errors, the only workaround I've found is to add the following
+If you get "Operation not permitted" errors, one workaround I've found is to add the following
 lines to your sudoers file, using visudo:
   ALL ALL=NOPASSWD: /usr/bin/labpro/photogate
   ALL ALL=NOPASSWD: /usr/bin/labpro/force
-Then when you run the program, do, e.g., "sudo photogate" rather than just "photogate". (Adding user
-accounts to the plugdev group does not seem to be sufficient. See
-http://ubuntuforums.org/showthread.php?p=11314033 .)
+Then when you run the program, do, e.g., "sudo photogate" rather than just "photogate".
+
+Another possibility, which I haven't tested yet is to put
+chmod o+w -R /dev/bus/usb into /etc/init.d/rc .
+
+Adding user accounts to the plugdev group does not seem to be sufficient.
+
+See:
+http://ubuntuforums.org/showthread.php?p=11314033
+http://ubuntuforums.org/showpost.php?p=5565853&postcount=16
