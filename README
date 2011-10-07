@@ -29,7 +29,8 @@ The sample program in the file "photogate" collects data from a photogate, print
 it is blocked. You can run it using the command "ruby photogate".
 
 The sample program in the file "force" will continuously read out as many force probes as are connected
-to the LabPro. All of the probes must be set to the 10 N scale.
+to the LabPro. All of the probes must be set to the 10 N scale. Bug: I have observed that this does not
+actually work properly with four force probes connected. I need to work more on this.
 
 If these cause an error "Operation not permitted," then see below under Permissions.
 
@@ -46,8 +47,10 @@ lines to your sudoers file, using visudo:
   ALL ALL=NOPASSWD: /usr/bin/labpro/force
 Then when you run the program, do, e.g., "sudo photogate" rather than just "photogate".
 
-Another possibility, which I haven't tested yet is to put
-chmod o+w -R /dev/bus/usb into /etc/init.d/rc .
+Another possibility, which I haven't tested yet is to put the line
+  chmod o+w -R /dev/bus/usb
+in the file
+  /etc/init.d/rc
 
 Adding user accounts to the plugdev group does not seem to be sufficient.
 
