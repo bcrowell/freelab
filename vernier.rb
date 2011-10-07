@@ -80,9 +80,11 @@ class AnalogSensor < Sensor
     return if self.has_errors
     @options=sensors[channel-1][1]
     @lab_pro.write("1,#{@channel},14") # 1=channel setup, p. 31; 14=read voltage 0-5 V
-    if false then # LoggerPro never actually uses command 3
+    # Docs say to do the following, but LoggerPro never actually uses command 3. Apparently this would only be needed in order to make it return data automatically
+    # at a fixed time interval. See http://www.vernier.com/discussion/index.php?PHPSESSID=a6198q6ssjoik8eq73h3vl1ga2&topic=481.msg1350#msg1350
+    if false then
       @lab_pro.write("3,0.5,-1,0") # data collection setup, p. 35; 0.5=samptime; -1=num points=real-time; 0=trigger type=immediate
-      @lab_pro.read # Docs say that command 3 doesn't return anything, but in fact it does return some data in this context.
+      @lab_pro.read # Command 3 doesn't return anything itself, but the setup command above would cause the labpro to send back data every 0.5 seconds.
     end
     # Could do command 4 here for calibration.
   end
@@ -127,7 +129,7 @@ class Photogate < DigitalSensor
       # triggering, etc.;  cmd 3, p. 35
       # 9999=samptime; p. 14 seems to say that this should just be set to some big number...??; they use 10 in examples; do I ever need to tell it to stop?
       # 1000=npoints
-    # Docs say command 3 never returns data. In fact it sometimes does, but apparently not in this context.
+    # See comment above in force probe code re command 3 causing data to come back.
   end
 
   def n
@@ -243,7 +245,7 @@ class LabPro
     end
     #----- Claim the interface:
     @when_i_die["interface"] = @interface
-    @h.claim_interface(@interface) # libusb docs say this is required before doing bulk_write
+    @h.claim_interface(@interface) # libusb docs say this is required before doing bulk_write; if this fails due to permissions, see README for workarounds
     @interface_claimed = true
     @when_i_die["interface_claimed"] = @interface_claimed
     ObjectSpace.undefine_finalizer(self); ObjectSpace.define_finalizer( self, proc {|id| LabPro.finalize(id,@when_i_die) })
@@ -324,7 +326,9 @@ class LabPro
     # for analog sensors:  ch1=0,ch2=3,add=0
     nch = ch2-ch1+1
     result = [nil] * nch
-    info = self.ask("80,0") # This is not documented in the LabPro technical manual as of January 2011, so the following is based on reverse-engineering.
+    # In the following, command 80 and return codes 4.0 and 26.0 are not documented, were found by reverse-engineering. They were later
+    # confirmed by Dave Vernier: http://www.vernier.com/discussion/index.php?PHPSESSID=a6198q6ssjoik8eq73h3vl1ga2&topic=481.msg1350#msg1350
+    info = self.ask("80,0")
     (ch1..ch2).each { |i|
       code = info[i+add]
       if !close_to(code,0.0) then
