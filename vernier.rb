@@ -237,7 +237,8 @@ class LabPro
     @is_open = true
     @when_i_die["is_open"] = @is_open
     ObjectSpace.undefine_finalizer(self); ObjectSpace.define_finalizer( self, proc {|id| LabPro.finalize(id,@when_i_die) })
-    #----- If necessary, detach vstusb driver.
+    #----- If necessary, detach vstusb driver. This is needed on kernels 2.6.31-14 through about 2.6.32, in which the kernel would automatically
+    #      claim the interface using this driver.
     @interface = 0 # I just guessed the 0, but it does seem to be right. Changing it to 1 gives Errno::ENOENT elsewhere.
     if File.exist?("/dev/vstusb0") then 
       # ...on Windows, the file won't exist, so this is harmless
