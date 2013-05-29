@@ -51,7 +51,7 @@ begin
   $photogate=Photogate.new($lab_pro)
   $photogate.exceptions.each {|e| raise e,e.message}
 rescue VernierException => e
-  describe_error = $!
+  describe_error = $!.to_s
   md = Gtk::MessageDialog.new(window,
             Gtk::Dialog::DESTROY_WITH_PARENT,
             {"info"=>Gtk::MessageDialog::INFO,"warn"=>Gtk::MessageDialog::WARNING,"error"=>Gtk::MessageDialog::ERROR}[e.severity], 

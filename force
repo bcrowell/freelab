@@ -74,7 +74,7 @@ begin
     end    
   }
 rescue VernierException => e
-  describe_error = $!
+  describe_error = $!.to_s
   error_dialog(window,e.severity,describe_error,e)
 end
 
