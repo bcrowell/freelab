@@ -2,9 +2,11 @@ INSTALLATION
 
 I developed this software on a machine running Ubuntu Linux, but it should work on
 any system that has Ruby and libusb. If you want to use the GUI code I wrote, you'll
-also need the GTK2 library for Ruby. On an Ubuntu machine, the following command will
-install all the stuff you need:
-  sudo apt-get install ruby libusb-ruby libgtk2-ruby
+also need the GTK2 library for Ruby. On an Ubuntu machine, the following commands will
+install all the libraries you need:
+  sudo apt-get install libusb-dev ruby-gtk2 ruby-json ruby1.9.1-dev
+  sudo gem sources -a  http://rubygems.org
+  sudo gem install ruby-usb
 Now install the software by doing:
   make install
 
